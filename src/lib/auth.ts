@@ -4,6 +4,35 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
+type CredentialsInput = {
+  email?: string;
+  password?: string;
+};
+
+function readCredentials(credentials?: CredentialsInput) {
+  const email = credentials?.email;
+  const password = credentials?.password;
+
+  if (!email || !password) return null;
+  return { email, password };
+}
+
+async function validateUser(email: string, password: string) {
+  const user = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (!user) return null;
+
+  const isPasswordValid = await bcrypt.compare(password, user.password);
+  if (!isPasswordValid) return null;
+
+  return {
+    id: user.id,
+    email: user.email,
+  };
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
@@ -14,24 +43,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       authorize: async (credentials) => {
-        const email = credentials?.email as string | undefined;
-        const password = credentials?.password as string | undefined;
+        const parsedCredentials = readCredentials(credentials as CredentialsInput | undefined);
+        if (!parsedCredentials) return null;
 
-        if (!email || !password) return null;
-
-        const user = await prisma.user.findUnique({
-          where: { email },
-        });
-
-        if (!user) return null;
-
-        const isPasswordValid = await bcrypt.compare(password, user.password);
-        if (!isPasswordValid) return null;
-
-        return {
-          id: user.id,
-          email: user.email,
-        };
+        return validateUser(parsedCredentials.email, parsedCredentials.password);
       },
     }),
   ],
